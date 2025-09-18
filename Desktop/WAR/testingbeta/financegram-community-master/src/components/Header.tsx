@@ -1,17 +1,9 @@
 import { Linkedin, LogOut, Mail, Server, Wifi } from 'lucide-react';
 import { Button } from './ui/button';
 import { useSessionContext } from '../context/session';
-import { SUPABASE_URL } from '@/lib/supabaseClient';
+import { FIREBASE_PROJECT_ID } from '@/lib/firebaseClient';
 
-function deriveHostLabel(url: string) {
-  try {
-    return new URL(url).host;
-  } catch (error) {
-    return url.replace(/^https?:\/\//, '');
-  }
-}
-
-const apiHostLabel = SUPABASE_URL ? deriveHostLabel(SUPABASE_URL) : "supabase not configured";
+const apiHostLabel = FIREBASE_PROJECT_ID ?? 'firebase not configured';
 
 function Header() {
   const { session, showLogin, loginWithLinkedInDemo, logout, isAuthenticating } = useSessionContext();
@@ -81,4 +73,5 @@ function Header() {
 }
 
 export default Header;
+
 

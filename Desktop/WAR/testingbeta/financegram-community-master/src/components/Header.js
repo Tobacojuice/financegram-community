@@ -2,16 +2,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Linkedin, LogOut, Mail, Server, Wifi } from 'lucide-react';
 import { Button } from './ui/button';
 import { useSessionContext } from '../context/session';
-import { SUPABASE_URL } from '@/lib/supabaseClient';
-function deriveHostLabel(url) {
-    try {
-        return new URL(url).host;
-    }
-    catch (error) {
-        return url.replace(/^https?:\/\//, '');
-    }
-}
-const apiHostLabel = SUPABASE_URL ? deriveHostLabel(SUPABASE_URL) : "supabase not configured";
+import { FIREBASE_PROJECT_ID } from '@/lib/firebaseClient';
+const apiHostLabel = FIREBASE_PROJECT_ID ?? 'firebase not configured';
 function Header() {
     const { session, showLogin, loginWithLinkedInDemo, logout, isAuthenticating } = useSessionContext();
     const connectionLabel = session ? 'Authenticated' : 'Guest access';

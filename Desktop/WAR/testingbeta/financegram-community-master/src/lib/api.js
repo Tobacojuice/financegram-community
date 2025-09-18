@@ -1,241 +1,210 @@
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { buildCommunityMemberships } from './community';
-import { supabase } from './supabaseClient';
-function ensureSupabase() {
-    if (!supabase) {
-        throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+import { getFirestoreDb } from './firebaseClient';
+const LOCAL_SESSION_KEY = 'financegram.local.session';
+function persistSession(session) {
+    if (typeof window === 'undefined') {
+        return;
     }
-    return supabase;
+    if (!session) {
+        window.localStorage.removeItem(LOCAL_SESSION_KEY);
+        return;
+    }
+    window.localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
 }
-async function fetchProfileCommunities(userId, email) {
-    if (!supabase || !userId) {
-        return buildCommunityMemberships(email ?? '');
-    }
-    try {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('communities')
-            .eq('id', userId)
-            .maybeSingle();
-        if (error) {
-            throw error;
-        }
-        const raw = Array.isArray(data?.communities) ? data?.communities : [];
-        const normalized = raw.filter((entry) => entry?.id && entry?.label);
-        return buildCommunityMemberships(email ?? '', normalized);
-    }
-    catch (error) {
-        console.warn('Unable to fetch profile communities from Supabase.', error);
-        return buildCommunityMemberships(email ?? '');
-    }
-}
-async function mapSupabaseSession(session) {
-    if (!session?.user) {
+function loadSession() {
+    if (typeof window === 'undefined') {
         return null;
     }
-    const email = session.user.email ?? '';
-    const provider = session.user.app_metadata?.provider ?? 'email';
-    const name = session.user.user_metadata?.full_name ||
-        session.user.user_metadata?.name ||
-        email;
-    const communities = await fetchProfileCommunities(session.user.id, email);
-    return {
-        name,
-        email,
-        provider,
-        communities,
-    };
+    const raw = window.localStorage.getItem(LOCAL_SESSION_KEY);
+    if (!raw) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.email && parsed?.name) {
+            return parsed;
+        }
+    }
+    catch (error) {
+        console.warn('Unable to parse stored session, clearing.', error);
+    }
+    window.localStorage.removeItem(LOCAL_SESSION_KEY);
+    return null;
 }
 export async function fetchSession() {
-    const client = ensureSupabase();
-    const { data, error } = await client.auth.getSession();
-    if (error) {
-        throw new Error(error.message);
-    }
-    return { session: await mapSupabaseSession(data.session) };
+    return { session: loadSession() };
 }
 export async function signInWithEmail(payload) {
-    const client = ensureSupabase();
-    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const { error } = await client.auth.signInWithOtp({
-        email: payload.email,
-        options: {
-            data: payload.name ? { full_name: payload.name } : undefined,
-            emailRedirectTo: redirectTo,
-        },
-    });
-    if (error) {
-        throw new Error(error.message);
-    }
-    const { data, error: sessionError } = await client.auth.getSession();
-    if (sessionError) {
-        throw new Error(sessionError.message);
-    }
-    return { session: await mapSupabaseSession(data.session) };
+    const trimmedEmail = payload.email.trim().toLowerCase();
+    const name = (payload.name ?? '').trim() || trimmedEmail;
+    const communities = buildCommunityMemberships(trimmedEmail);
+    const session = {
+        name,
+        email: trimmedEmail,
+        provider: 'email',
+        communities,
+    };
+    persistSession(session);
+    return { session };
 }
 export async function signInWithLinkedInDemo() {
-    const client = ensureSupabase();
-    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const { data, error } = await client.auth.signInWithOAuth({
-        provider: 'linkedin',
-        options: {
-            redirectTo,
-        },
-    });
-    if (error) {
-        throw new Error(error.message);
-    }
-    if (data?.url && typeof window !== 'undefined') {
-        window.location.href = data.url;
-    }
-    const { data: sessionData, error: sessionError } = await client.auth.getSession();
-    if (sessionError) {
-        throw new Error(sessionError.message);
-    }
-    return { session: await mapSupabaseSession(sessionData.session) };
+    const email = 'demo@linkedin.com';
+    const session = {
+        name: 'LinkedIn Demo',
+        email,
+        provider: 'linkedin-demo',
+        communities: buildCommunityMemberships(email),
+    };
+    persistSession(session);
+    return { session };
 }
 export async function signOut() {
-    const client = ensureSupabase();
-    const { error } = await client.auth.signOut();
-    if (error) {
-        throw new Error(error.message);
-    }
+    persistSession(null);
 }
 export async function fetchMarketData() {
-    const client = ensureSupabase();
-    const [{ data: quotesData, error: quotesError }, { data: seriesData, error: seriesError }] = await Promise.all([
-        client
-            .from('market_quotes')
-            .select('symbol,label,price,change,change_percent,previous_close,volume,updated_at')
-            .order('updated_at', { ascending: false }),
-        client
-            .from('market_series')
-            .select('timestamp,value')
-            .order('timestamp', { ascending: true }),
-    ]);
-    if (quotesError) {
-        throw new Error(quotesError.message);
+    const db = getFirestoreDb();
+    try {
+        const quotesSnap = await getDocs(query(collection(db, 'market_quotes'), orderBy('updated_at', 'desc'), limit(50)));
+        const seriesSnap = await getDocs(query(collection(db, 'market_series'), orderBy('timestamp', 'asc'), limit(500)));
+        const quotes = quotesSnap.docs.map((doc) => {
+            const data = doc.data() ?? {};
+            return {
+                symbol: data.symbol ?? doc.id,
+                label: data.label ?? data.symbol ?? doc.id,
+                price: Number(data.price ?? 0),
+                change: Number(data.change ?? 0),
+                changePercent: Number(data.change_percent ?? 0),
+                previousClose: Number(data.previous_close ?? 0),
+                volume: data.volume ? Number(data.volume) : undefined,
+            };
+        });
+        const series = seriesSnap.docs.map((doc) => {
+            const data = doc.data() ?? {};
+            return {
+                timestamp: data.timestamp ?? '',
+                value: Number(data.value ?? 0),
+            };
+        });
+        return {
+            quotes,
+            series,
+            updatedAt: quotesSnap.docs[0]?.data()?.updated_at,
+        };
     }
-    if (seriesError) {
-        throw new Error(seriesError.message);
+    catch (error) {
+        console.warn('Unable to fetch market data from Firebase.', error);
+        throw error;
     }
-    const quotes = (quotesData ?? []).map((row) => ({
-        symbol: row.symbol,
-        label: row.label,
-        price: Number(row.price ?? 0),
-        change: Number(row.change ?? 0),
-        changePercent: Number(row.change_percent ?? 0),
-        previousClose: Number(row.previous_close ?? 0),
-        volume: row.volume ? Number(row.volume) : undefined,
-    }));
-    const series = (seriesData ?? []).map((row) => ({
-        timestamp: row.timestamp,
-        value: Number(row.value ?? 0),
-    }));
-    return {
-        quotes,
-        series,
-        updatedAt: quotesData?.[0]?.updated_at ?? undefined,
-    };
 }
 export async function fetchNews() {
-    const client = ensureSupabase();
-    const { data, error } = await client
-        .from('news_items')
-        .select('id,title,source,url,description,image_url,published_at,updated_at')
-        .order('published_at', { ascending: false })
-        .limit(50);
-    if (error) {
-        throw new Error(error.message);
+    const db = getFirestoreDb();
+    try {
+        const snap = await getDocs(query(collection(db, 'news_items'), orderBy('published_at', 'desc'), limit(50)));
+        const items = snap.docs.map((doc) => {
+            const data = doc.data() ?? {};
+            return {
+                id: doc.id,
+                title: data.title ?? 'Untitled',
+                source: data.source ?? 'Financegram',
+                url: data.url ?? '#',
+                description: data.description ?? undefined,
+                imageUrl: data.image_url ?? undefined,
+                publishedAt: data.published_at ?? undefined,
+            };
+        });
+        return {
+            items,
+            source: 'Firebase newsroom',
+            updatedAt: snap.docs[0]?.data()?.updated_at,
+        };
     }
-    const items = (data ?? []).map((row) => ({
-        id: row.id,
-        title: row.title,
-        source: row.source,
-        url: row.url,
-        description: row.description ?? undefined,
-        imageUrl: row.image_url ?? undefined,
-        publishedAt: row.published_at ?? undefined,
-    }));
-    return {
-        items,
-        source: 'Supabase newsroom',
-        updatedAt: data?.[0]?.updated_at ?? undefined,
-    };
+    catch (error) {
+        console.warn('Unable to fetch news from Firebase.', error);
+        throw error;
+    }
 }
 export async function fetchJobListings() {
-    const client = ensureSupabase();
-    const { data, error } = await client
-        .from('talent_jobs')
-        .select('id,title,company,location,url,remote,tags,posted_at,updated_at')
-        .order('posted_at', { ascending: false })
-        .limit(50);
-    if (error) {
-        throw new Error(error.message);
+    const db = getFirestoreDb();
+    try {
+        const snap = await getDocs(query(collection(db, 'talent_jobs'), orderBy('posted_at', 'desc'), limit(50)));
+        const listings = snap.docs.map((doc) => {
+            const data = doc.data() ?? {};
+            return {
+                id: doc.id,
+                title: data.title ?? 'Role',
+                company: data.company ?? 'Financegram Client',
+                location: data.location ?? 'Global',
+                url: data.url ?? '#',
+                remote: Boolean(data.remote),
+                tags: Array.isArray(data.tags) ? data.tags : undefined,
+                postedAt: data.posted_at ?? undefined,
+            };
+        });
+        return {
+            listings,
+            updatedAt: snap.docs[0]?.data()?.updated_at,
+        };
     }
-    const listings = (data ?? []).map((row) => ({
-        id: row.id,
-        title: row.title,
-        company: row.company,
-        location: row.location,
-        url: row.url,
-        remote: Boolean(row.remote),
-        tags: Array.isArray(row.tags) ? row.tags : undefined,
-        postedAt: row.posted_at ?? undefined,
-    }));
-    return {
-        listings,
-        updatedAt: data?.[0]?.updated_at ?? undefined,
-    };
+    catch (error) {
+        console.warn('Unable to fetch job listings from Firebase.', error);
+        throw error;
+    }
 }
 export async function fetchCommunityHighlights() {
-    const client = ensureSupabase();
-    const { data, error } = await client
-        .from('community_posts')
-        .select('id,title,forum,forum_label,author,url,score,comments,created_at,thumbnail,updated_at')
-        .order('created_at', { ascending: false })
-        .limit(50);
-    if (error) {
-        throw new Error(error.message);
+    const db = getFirestoreDb();
+    try {
+        const snap = await getDocs(query(collection(db, 'community_posts'), orderBy('created_at', 'desc'), limit(50)));
+        const posts = snap.docs.map((doc) => {
+            const data = doc.data() ?? {};
+            return {
+                id: doc.id,
+                title: data.title ?? 'Thread',
+                forum: data.forum ?? 'fg-global',
+                forumLabel: data.forum_label ?? 'Financegram - Global Forum',
+                author: data.author ?? 'financegram',
+                url: data.url ?? '#',
+                score: Number(data.score ?? 0),
+                comments: Number(data.comments ?? 0),
+                createdAt: data.created_at ?? undefined,
+                thumbnail: data.thumbnail ?? undefined,
+            };
+        });
+        return {
+            posts,
+            updatedAt: snap.docs[0]?.data()?.updated_at,
+        };
     }
-    const posts = (data ?? []).map((row) => ({
-        id: row.id,
-        title: row.title,
-        forum: row.forum,
-        forumLabel: row.forum_label,
-        author: row.author,
-        url: row.url,
-        score: Number(row.score ?? 0),
-        comments: Number(row.comments ?? 0),
-        createdAt: row.created_at ?? undefined,
-        thumbnail: row.thumbnail ?? undefined,
-    }));
-    return {
-        posts,
-        updatedAt: data?.[0]?.updated_at ?? undefined,
-    };
+    catch (error) {
+        console.warn('Unable to fetch community posts from Firebase.', error);
+        throw error;
+    }
 }
 export async function fetchCertificates() {
-    const client = ensureSupabase();
-    const { data, error } = await client
-        .from('learning_certifications')
-        .select('id,title,provider,duration,format,cost_range,description,url,image_url,updated_at')
-        .order('title', { ascending: true });
-    if (error) {
-        throw new Error(error.message);
+    const db = getFirestoreDb();
+    try {
+        const snap = await getDocs(query(collection(db, 'learning_certifications'), orderBy('title', 'asc')));
+        const programs = snap.docs.map((doc) => {
+            const data = doc.data() ?? {};
+            return {
+                id: doc.id,
+                title: data.title ?? 'Certification',
+                provider: data.provider ?? 'Financegram Academy',
+                duration: data.duration ?? 'Self-paced',
+                format: data.format ?? 'On-demand',
+                costRange: data.cost_range ?? 'N/A',
+                description: data.description ?? '',
+                url: data.url ?? '#',
+                imageUrl: data.image_url ?? undefined,
+            };
+        });
+        return {
+            programs,
+            updatedAt: snap.docs[0]?.data()?.updated_at,
+        };
     }
-    const programs = (data ?? []).map((row) => ({
-        id: row.id,
-        title: row.title,
-        provider: row.provider,
-        duration: row.duration,
-        format: row.format,
-        costRange: row.cost_range,
-        description: row.description,
-        url: row.url,
-        imageUrl: row.image_url ?? undefined,
-    }));
-    return {
-        programs,
-        updatedAt: data?.[0]?.updated_at ?? undefined,
-    };
+    catch (error) {
+        console.warn('Unable to fetch certifications from Firebase.', error);
+        throw error;
+    }
 }
