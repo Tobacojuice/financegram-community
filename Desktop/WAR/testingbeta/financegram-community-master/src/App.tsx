@@ -9,55 +9,9 @@ import {
   signOut,
   type ApiSession,
 } from './lib/api';
+import { buildCommunityMemberships } from './lib/community';
 
 const DEFAULT_DEMO_EMAIL = 'demo@linkedin.com';
-
-type RegionId = 'fg-emea' | 'fg-usa' | 'fg-asia';
-
-const REGION_LABELS: Record<RegionId, string> = {
-  'fg-emea': 'Financegram · EMEA Forum',
-  'fg-usa': 'Financegram · USA Forum',
-  'fg-asia': 'Financegram · Asia Forum',
-};
-
-const GLOBAL_FORUM: CommunityMembership = {
-  id: 'fg-global',
-  label: 'Financegram · Global Forum',
-};
-
-const UNIVERSITY_FORUMS: Record<string, { id: string; label: string; region: RegionId }> = {
-  'alumni.unav.es': {
-    id: 'fg-uni-navarra',
-    label: 'Financegram · University of Navarra Forum',
-    region: 'fg-emea',
-  },
-  'unav.es': {
-    id: 'fg-uni-navarra',
-    label: 'Financegram · University of Navarra Forum',
-    region: 'fg-emea',
-  },
-};
-
-const TLD_REGION_MAP: Record<string, RegionId> = {
-  es: 'fg-emea',
-  fr: 'fg-emea',
-  uk: 'fg-emea',
-  de: 'fg-emea',
-  it: 'fg-emea',
-  pt: 'fg-emea',
-  ie: 'fg-emea',
-  eu: 'fg-emea',
-  edu: 'fg-usa',
-  us: 'fg-usa',
-  ca: 'fg-usa',
-  mx: 'fg-usa',
-  jp: 'fg-asia',
-  sg: 'fg-asia',
-  cn: 'fg-asia',
-  hk: 'fg-asia',
-  au: 'fg-asia',
-  in: 'fg-asia',
-};
 
 function deriveNameFromEmail(email: string) {
   const [localPart] = email.split('@');
@@ -69,49 +23,11 @@ function deriveNameFromEmail(email: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function uniqueMemberships(entries: CommunityMembership[]): CommunityMembership[] {
-  const seen = new Set<string>();
-  const ordered: CommunityMembership[] = [];
-  for (const entry of entries) {
-    if (!seen.has(entry.id)) {
-      seen.add(entry.id);
-      ordered.push(entry);
-    }
-  }
-  return ordered;
-}
+type SessionLike = Pick<ApiSession, 'name' | 'email' | 'provider'> & {
+  communities?: CommunityMembership[];
+};
 
-function determineRegionByEmail(email: string): RegionId {
-  const domain = email.split('@')[1] ?? '';
-  const parts = domain.split('.');
-  const tld = parts.length > 0 ? parts[parts.length - 1].toLowerCase() : '';
-  return TLD_REGION_MAP[tld] ?? 'fg-emea';
-}
-
-function buildCommunityMemberships(email: string, existing?: CommunityMembership[]): CommunityMembership[] {
-  const lowerEmail = email.trim().toLowerCase();
-  if (!lowerEmail) {
-    return existing?.length ? existing : [GLOBAL_FORUM];
-  }
-
-  const domain = lowerEmail.split('@')[1] ?? '';
-  const universityEntry = UNIVERSITY_FORUMS[domain];
-  const region = universityEntry?.region ?? determineRegionByEmail(lowerEmail);
-
-  const memberships: CommunityMembership[] = [GLOBAL_FORUM, { id: region, label: REGION_LABELS[region] }];
-
-  if (universityEntry) {
-    memberships.push({ id: universityEntry.id, label: universityEntry.label });
-  }
-
-  if (existing?.length) {
-    memberships.push(...existing);
-  }
-
-  return uniqueMemberships(memberships);
-}
-
-function normalizeSession(apiSession: ApiSession, fallbackEmail?: string): Session {
+function normalizeSession(apiSession: SessionLike, fallbackEmail?: string): Session {
   const resolvedEmail = (apiSession.email || fallbackEmail || '').trim().toLowerCase();
   const communities = buildCommunityMemberships(resolvedEmail || fallbackEmail || '', apiSession.communities);
 
@@ -298,5 +214,3 @@ function App() {
 }
 
 export default App;
-
-

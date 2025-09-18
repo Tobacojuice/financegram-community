@@ -316,7 +316,7 @@ function NewsPanel({ news }: { news: NewsHook }) {
                 {story.title}
               </a>
               <p className="text-xs text-terminal-green/50">
-                {story.source} · {story.publishedAt ? formatRelativeTime(story.publishedAt) : 'just in'}
+                {story.source} - {story.publishedAt ? formatRelativeTime(story.publishedAt) : 'just in'}
               </p>
               {story.description ? (
                 <p className="text-xs text-terminal-green/40 line-clamp-2">{story.description}</p>
@@ -383,7 +383,7 @@ function JobSeaPanel({ jobs }: { jobs: JobHook }) {
                 </td>
                 <td className="px-4 py-3 text-terminal-green/60">{job.company}</td>
                 <td className="px-4 py-3 text-terminal-green/60">
-                  {job.remote ? `${job.location} · remote` : job.location}
+                  {job.remote ? `${job.location} - remote` : job.location}
                 </td>
                 <td className="px-4 py-3 text-terminal-green/50">
                   {job.postedAt ? formatRelativeTime(job.postedAt) : 'recent'}
@@ -416,7 +416,7 @@ function CommunitiesPanel({
           <h3 className="text-sm uppercase tracking-[0.35em] text-terminal-green">Community radar</h3>
           {memberships.length ? (
             <p className="text-xs text-terminal-green/45">
-              Forums: {memberships.map((membership) => membership.label).join(' · ')}
+              Forums: {memberships.map((membership) => membership.label).join(' - ')}
             </p>
           ) : (
             <p className="text-xs text-terminal-green/50">Join a session to unlock personalized forums.</p>
@@ -512,9 +512,9 @@ function CertificatesPanel({ certificates }: { certificates: CertificatesHook })
             </div>
             <p className="text-xs text-terminal-green/60">{program.description}</p>
             <ul className="space-y-1 text-xs text-terminal-green/45">
-              <li>Duration · {program.duration}</li>
-              <li>Format · {program.format}</li>
-              <li>Cost · {program.costRange}</li>
+              <li>Duration - {program.duration}</li>
+              <li>Format - {program.format}</li>
+              <li>Cost - {program.costRange}</li>
             </ul>
             <div>
               <a
@@ -716,5 +716,6 @@ function SessionCard({
 }
 
 export default TerminalDashboard;
+
 
 

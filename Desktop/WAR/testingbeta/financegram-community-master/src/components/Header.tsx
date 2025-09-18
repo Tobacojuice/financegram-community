@@ -1,7 +1,7 @@
 import { Linkedin, LogOut, Mail, Server, Wifi } from 'lucide-react';
 import { Button } from './ui/button';
 import { useSessionContext } from '../context/session';
-import { API_BASE_URL } from '@/lib/api';
+import { SUPABASE_URL } from '@/lib/supabaseClient';
 
 function deriveHostLabel(url: string) {
   try {
@@ -11,7 +11,7 @@ function deriveHostLabel(url: string) {
   }
 }
 
-const apiHostLabel = deriveHostLabel(API_BASE_URL);
+const apiHostLabel = SUPABASE_URL ? deriveHostLabel(SUPABASE_URL) : "supabase not configured";
 
 function Header() {
   const { session, showLogin, loginWithLinkedInDemo, logout, isAuthenticating } = useSessionContext();
@@ -81,3 +81,4 @@ function Header() {
 }
 
 export default Header;
+
