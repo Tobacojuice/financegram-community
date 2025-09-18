@@ -1,3 +1,4 @@
+import type { CommunityMembership, Session } from '../context/session';
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -68,7 +69,7 @@ function TerminalDashboard() {
         </span>
         <h2 className="text-3xl text-terminal-green">{welcome}</h2>
         <p className="text-sm text-terminal-green/60">
-          Financegram pipes first-party data—market trades, newsroom copy, hiring flow, and credential pathways—into a Bloomberg-inspired surface tuned for fast decision making.
+          Financegram pipes first-party data, market trades, newsroom copy, hiring flow, and credential pathways into a Bloomberg-inspired surface tuned for fast decision making.
         </p>
         <div className="flex flex-wrap items-center gap-4 text-[11px] uppercase tracking-[0.3em] text-terminal-green/45">
           <span>
@@ -78,7 +79,7 @@ function TerminalDashboard() {
             Newswire: {news.sourceLabel}
           </span>
           <span>
-            JobSea: {jobs.lastUpdated ? `refreshed ${formatRelativeTime(jobs.lastUpdated)}` : 'initialising'}
+            JobSea: {jobs.lastUpdated ? `refreshed ${formatRelativeTime(jobs.lastUpdated)}` : 'initializing'}
           </span>
         </div>
       </header>
@@ -110,7 +111,9 @@ function TerminalDashboard() {
           {activeTab === 'markets' && <MarketsPanel data={market} />}
           {activeTab === 'news' && <NewsPanel news={news} />}
           {activeTab === 'jobsea' && <JobSeaPanel jobs={jobs} />}
-          {activeTab === 'communities' && <CommunitiesPanel communities={communities} />}
+          {activeTab === 'communities' && (
+            <CommunitiesPanel communities={communities} memberships={session?.communities ?? []} />
+          )}
           {activeTab === 'certificates' && <CertificatesPanel certificates={certificates} />}
           {activeTab === 'tv' && <TvPanel />}
         </div>
@@ -394,18 +397,33 @@ function JobSeaPanel({ jobs }: { jobs: JobHook }) {
   );
 }
 
-function CommunitiesPanel({ communities }: { communities: CommunitiesHook }) {
+function CommunitiesPanel({
+  communities,
+  memberships,
+}: {
+  communities: CommunitiesHook;
+  memberships: CommunityMembership[];
+}) {
   const { posts, isLoading, error, lastUpdated } = communities;
+  const membershipIds = new Set(memberships.map((membership) => membership.id));
+  const filtered = membershipIds.size ? posts.filter((post) => membershipIds.has(post.forum)) : posts;
+  const visiblePosts = filtered.length ? filtered : posts;
 
   return (
     <div className="rounded-2xl border border-terminal-green/30 bg-black/70 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="space-y-1">
           <h3 className="text-sm uppercase tracking-[0.35em] text-terminal-green">Community radar</h3>
-          <p className="text-xs text-terminal-green/50">Financegram moderated sentiment across partner desks.</p>
+          {memberships.length ? (
+            <p className="text-xs text-terminal-green/45">
+              Forums: {memberships.map((membership) => membership.label).join(' · ')}
+            </p>
+          ) : (
+            <p className="text-xs text-terminal-green/50">Join a session to unlock personalized forums.</p>
+          )}
         </div>
         <span className="text-[11px] uppercase tracking-[0.3em] text-terminal-green/40">
-          {lastUpdated ? `Updated ${formatRelativeTime(lastUpdated)}` : `${posts.length} threads`}
+          {lastUpdated ? `Updated ${formatRelativeTime(lastUpdated)}` : `${visiblePosts.length} threads`}
         </span>
       </div>
 
@@ -417,12 +435,12 @@ function CommunitiesPanel({ communities }: { communities: CommunitiesHook }) {
       ) : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {isLoading && posts.length === 0 ? (
+        {isLoading && visiblePosts.length === 0 ? (
           <div className="col-span-full grid h-32 place-items-center text-xs uppercase tracking-[0.3em] text-terminal-green/50">
             Listening…
           </div>
         ) : null}
-        {posts.slice(0, 8).map((post) => (
+        {visiblePosts.map((post) => (
           <a
             key={post.id}
             href={post.url}
@@ -431,7 +449,7 @@ function CommunitiesPanel({ communities }: { communities: CommunitiesHook }) {
             className="group flex flex-col gap-3 rounded-xl border border-terminal-green/30 bg-black/60 p-4 transition hover:border-terminal-green/60 hover:bg-black/70"
           >
             <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.3em] text-terminal-green/45">
-              <span>{post.subreddit}</span>
+              <span>{post.forumLabel}</span>
               <span>{post.createdAt ? formatRelativeTime(post.createdAt) : 'today'}</span>
             </div>
             <h4 className="text-sm text-terminal-green group-hover:text-terminal-green/80">{post.title}</h4>
@@ -635,7 +653,7 @@ function SessionCard({
   onDemo,
   isAuthenticating,
 }: {
-  session: ReturnType<typeof useSessionContext>['session'];
+  session: Session | null;
   onLogout: () => Promise<void> | void;
   onLogin: () => void;
   onDemo: () => Promise<void> | void;
@@ -646,11 +664,21 @@ function SessionCard({
       <h4 className="text-xs uppercase tracking-[0.35em] text-terminal-green">Account</h4>
       {session ? (
         <div className="mt-3 space-y-3 text-sm text-terminal-green">
-          <div>
+          <div className="space-y-1">
             <p className="text-terminal-green/70">Logged in as</p>
             <p className="text-lg text-terminal-green">{session.name}</p>
             <p className="text-xs uppercase tracking-[0.3em] text-terminal-green/40">{session.email}</p>
           </div>
+          {session.communities.length ? (
+            <div className="space-y-1 text-xs text-terminal-green/55">
+              <p className="uppercase tracking-[0.3em] text-terminal-green/50">Forums</p>
+              <ul className="space-y-1">
+                {session.communities.map((membership) => (
+                  <li key={membership.id}>{membership.label}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <Button
             variant="ghost"
             className="w-full border border-terminal-green/30 bg-terminal-green/10 text-terminal-green hover:bg-terminal-green/20"
@@ -688,4 +716,5 @@ function SessionCard({
 }
 
 export default TerminalDashboard;
+
 

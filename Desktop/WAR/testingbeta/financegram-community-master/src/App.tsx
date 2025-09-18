@@ -1,13 +1,63 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Header from './components/Header';
 import IndexPage from './pages/Index';
-import { SessionContext, type Session } from './context/session';
+import { SessionContext, type Session, type CommunityMembership } from './context/session';
 import {
   fetchSession,
   signInWithEmail,
   signInWithLinkedInDemo,
   signOut,
+  type ApiSession,
 } from './lib/api';
+
+const DEFAULT_DEMO_EMAIL = 'demo@linkedin.com';
+
+type RegionId = 'fg-emea' | 'fg-usa' | 'fg-asia';
+
+const REGION_LABELS: Record<RegionId, string> = {
+  'fg-emea': 'Financegram · EMEA Forum',
+  'fg-usa': 'Financegram · USA Forum',
+  'fg-asia': 'Financegram · Asia Forum',
+};
+
+const GLOBAL_FORUM: CommunityMembership = {
+  id: 'fg-global',
+  label: 'Financegram · Global Forum',
+};
+
+const UNIVERSITY_FORUMS: Record<string, { id: string; label: string; region: RegionId }> = {
+  'alumni.unav.es': {
+    id: 'fg-uni-navarra',
+    label: 'Financegram · University of Navarra Forum',
+    region: 'fg-emea',
+  },
+  'unav.es': {
+    id: 'fg-uni-navarra',
+    label: 'Financegram · University of Navarra Forum',
+    region: 'fg-emea',
+  },
+};
+
+const TLD_REGION_MAP: Record<string, RegionId> = {
+  es: 'fg-emea',
+  fr: 'fg-emea',
+  uk: 'fg-emea',
+  de: 'fg-emea',
+  it: 'fg-emea',
+  pt: 'fg-emea',
+  ie: 'fg-emea',
+  eu: 'fg-emea',
+  edu: 'fg-usa',
+  us: 'fg-usa',
+  ca: 'fg-usa',
+  mx: 'fg-usa',
+  jp: 'fg-asia',
+  sg: 'fg-asia',
+  cn: 'fg-asia',
+  hk: 'fg-asia',
+  au: 'fg-asia',
+  in: 'fg-asia',
+};
 
 function deriveNameFromEmail(email: string) {
   const [localPart] = email.split('@');
@@ -17,6 +67,60 @@ function deriveNameFromEmail(email: string) {
   return localPart
     .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function uniqueMemberships(entries: CommunityMembership[]): CommunityMembership[] {
+  const seen = new Set<string>();
+  const ordered: CommunityMembership[] = [];
+  for (const entry of entries) {
+    if (!seen.has(entry.id)) {
+      seen.add(entry.id);
+      ordered.push(entry);
+    }
+  }
+  return ordered;
+}
+
+function determineRegionByEmail(email: string): RegionId {
+  const domain = email.split('@')[1] ?? '';
+  const parts = domain.split('.');
+  const tld = parts.length > 0 ? parts[parts.length - 1].toLowerCase() : '';
+  return TLD_REGION_MAP[tld] ?? 'fg-emea';
+}
+
+function buildCommunityMemberships(email: string, existing?: CommunityMembership[]): CommunityMembership[] {
+  const lowerEmail = email.trim().toLowerCase();
+  if (!lowerEmail) {
+    return existing?.length ? existing : [GLOBAL_FORUM];
+  }
+
+  const domain = lowerEmail.split('@')[1] ?? '';
+  const universityEntry = UNIVERSITY_FORUMS[domain];
+  const region = universityEntry?.region ?? determineRegionByEmail(lowerEmail);
+
+  const memberships: CommunityMembership[] = [GLOBAL_FORUM, { id: region, label: REGION_LABELS[region] }];
+
+  if (universityEntry) {
+    memberships.push({ id: universityEntry.id, label: universityEntry.label });
+  }
+
+  if (existing?.length) {
+    memberships.push(...existing);
+  }
+
+  return uniqueMemberships(memberships);
+}
+
+function normalizeSession(apiSession: ApiSession, fallbackEmail?: string): Session {
+  const resolvedEmail = (apiSession.email || fallbackEmail || '').trim().toLowerCase();
+  const communities = buildCommunityMemberships(resolvedEmail || fallbackEmail || '', apiSession.communities);
+
+  return {
+    name: apiSession.name,
+    email: resolvedEmail,
+    provider: apiSession.provider,
+    communities,
+  };
 }
 
 function App() {
@@ -32,7 +136,7 @@ function App() {
     setIsBootstrappingSession(true);
     try {
       const payload = await fetchSession();
-      setSession(payload.session ?? null);
+      setSession(payload.session ? normalizeSession(payload.session) : null);
     } catch (error) {
       console.warn('Unable to hydrate session from API, continuing unauthenticated.', error);
       setSession(null);
@@ -63,9 +167,24 @@ function App() {
           setAuthError('Unable to start your Financegram session. Please try again.');
           return;
         }
-        setSession(payload.session);
+        setSession(normalizeSession(payload.session));
       } catch (error) {
-        setAuthError(error instanceof Error ? error.message : 'Authentication failed.');
+        console.warn('Email auth failed, enabling local preview session.', error);
+        setSession(
+          normalizeSession(
+            {
+              name: derivedName,
+              email: trimmedEmail,
+              provider: 'email',
+            },
+            trimmedEmail,
+          ),
+        );
+        setAuthError(
+          error instanceof Error
+            ? `${error.message} (running in local preview mode)`
+            : 'Authentication failed - switched to local preview session.',
+        );
       } finally {
         setIsAuthenticating(false);
       }
@@ -82,9 +201,24 @@ function App() {
         setAuthError('Demo session is currently unavailable.');
         return;
       }
-      setSession(payload.session);
+      setSession(normalizeSession(payload.session));
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Unable to launch demo session.');
+      console.warn('Demo session api unavailable, falling back to bundled demo.', error);
+      setSession(
+        normalizeSession(
+          {
+            name: 'LinkedIn Demo',
+            email: DEFAULT_DEMO_EMAIL,
+            provider: 'linkedin-demo',
+          },
+          DEFAULT_DEMO_EMAIL,
+        ),
+      );
+      setAuthError(
+        error instanceof Error
+          ? `${error.message} (bundled demo session active)`
+          : 'Unable to launch demo session - loaded bundled demo instead.',
+      );
     } finally {
       setIsAuthenticating(false);
     }
@@ -164,3 +298,5 @@ function App() {
 }
 
 export default App;
+
+

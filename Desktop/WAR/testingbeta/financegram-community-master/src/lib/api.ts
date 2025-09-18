@@ -1,4 +1,4 @@
-import { Session } from '@/context/session';
+import type { CommunityMembership, ProviderId } from '@/context/session';
 
 const DEFAULT_API_BASE = 'https://api.financegram.community';
 
@@ -35,7 +35,7 @@ async function request<TResponse>(path: string, options: RequestOptions = {}) {
         message = body.error;
       }
     } catch (error) {
-      // Ignore JSON parse errors; fall back to default message.
+      // Ignore JSON parse failures and retain default message.
     }
     throw new Error(message);
   }
@@ -47,8 +47,15 @@ async function request<TResponse>(path: string, options: RequestOptions = {}) {
   return (await response.json()) as TResponse;
 }
 
+export interface ApiSession {
+  name: string;
+  email: string;
+  provider: ProviderId;
+  communities?: CommunityMembership[];
+}
+
 export interface SessionResponse {
-  session: Session | null;
+  session: ApiSession | null;
 }
 
 export async function fetchSession() {
@@ -140,7 +147,8 @@ export async function fetchJobListings() {
 export interface CommunityHighlight {
   id: string;
   title: string;
-  subreddit: string;
+  forum: string;
+  forumLabel: string;
   author: string;
   url: string;
   score: number;
@@ -178,4 +186,3 @@ export interface CertificatesResponse {
 export async function fetchCertificates() {
   return request<CertificatesResponse>('/api/learning/certifications');
 }
-

@@ -26,7 +26,7 @@ async function request(path, options = {}) {
             }
         }
         catch (error) {
-            // Ignore JSON parse errors; fall back to default message.
+            // Ignore JSON parse failures and retain default message.
         }
         throw new Error(message);
     }

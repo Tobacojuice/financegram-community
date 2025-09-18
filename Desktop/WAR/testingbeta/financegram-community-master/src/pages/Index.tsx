@@ -121,7 +121,7 @@ function LoginSection() {
             ref={emailInputRef}
             value={email}
             onChange={(event) => handleEmailChange(event.target.value)}
-            placeholder="you@financegram.com"
+            placeholder="ilopez-mele@alumni.unav.es"
             className="mt-1 w-full rounded-md border border-terminal-green/30 bg-black/50 px-4 py-3 text-sm text-terminal-green placeholder:text-terminal-green/40 focus:border-terminal-green focus:outline-none focus:ring-1 focus:ring-terminal-green"
             type="email"
             autoComplete="email"
@@ -160,3 +160,4 @@ function LoginSection() {
 }
 
 export default IndexPage;
+

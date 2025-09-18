@@ -2,10 +2,16 @@ import { createContext, useContext, type RefObject } from 'react';
 
 export type ProviderId = 'email' | 'linkedin-demo';
 
+export interface CommunityMembership {
+  id: string;
+  label: string;
+}
+
 export interface Session {
   name: string;
   email: string;
   provider: ProviderId;
+  communities: CommunityMembership[];
 }
 
 export interface SessionContextValue {
