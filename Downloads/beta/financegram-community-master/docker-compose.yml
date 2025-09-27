@@ -1,0 +1,28 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo:7
+    container_name: financegram-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  api:
+    build:
+      context: ./financegram-backend
+      dockerfile: Dockerfile
+    container_name: financegram-api
+    restart: unless-stopped
+    environment:
+      - PORT=4000
+      - MONGO_URI=mongodb://mongo:27017/financegram
+      - JWT_SECRET=ARB6ToyqlF5WfLQ7QOveYZSBji2PhsPxMiPSbZQ3kPOuYS0CLkLQ4AB09lwZ94Dk
+    depends_on:
+      - mongo
+    ports:
+      - "4000:4000"
+
+volumes:
+  mongo_data:
